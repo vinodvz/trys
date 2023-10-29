@@ -69,8 +69,10 @@ class Layout:
         self.weight = "normal"
         self.style = "roman"
         self.size = 16
+        self.line = []
         for tok in tokens:
             self.token(tok)
+        self.flush()
 
     def token(self, tok):
         if isinstance(tok, Text):
@@ -98,23 +100,43 @@ class Layout:
             self.size += 4
         elif tok.tag == "/big":
             self.size -= 4
+        elif tok.tag == "br":
+            self.flush()
+        elif tok.tag == "/p":
+            self.flush()
+            self.cursor_y += VSTEP
 
     def word(self, word):
-        if word == "\n":
-          self.cursor_y += VSTEP
-          self.cursor_x = HSTEP
-          return
+        # if word == "\n":
+        #   self.cursor_y += VSTEP
+        #   self.cursor_x = HSTEP
+        #   return
         font = tkinter.font.Font(
             size=self.size,
             weight=self.weight,
             slant=self.style,
         )
         w = font.measure(word)
-        self.display_list.append((self.cursor_x, self.cursor_y, word, font))
+        # self.display_list.append((self.cursor_x, self.cursor_y, word, font))
+        self.line.append((self.cursor_x, word, font))
         self.cursor_x += w + font.measure(" ")
         if self.cursor_x + w > WIDTH - HSTEP:
+          self.flush()
           self.cursor_y += font.metrics("linespace") * 1.25
           self.cursor_x = HSTEP
+
+    def flush(self):
+        if not self.line: return
+        metrics = [font.metrics() for x, word, font in self.line]
+        max_ascent = max([metric["ascent"] for metric in metrics])
+        baseline = self.cursor_y + 1.25 * max_ascent
+        for x, word, font in self.line:
+          y = baseline - font.metrics("ascent")
+          self.display_list.append((x, y, word, font))
+        self.cursor_x = HSTEP
+        self.line = []
+        max_descent = max([metric["descent"] for metric in metrics])
+        self.cursor_y = baseline + 1.25 * max_descent
 
 class Browser:
     def __init__(self):
@@ -128,6 +150,19 @@ class Browser:
         self.canvas.pack()
         self.window.bind("<Down>", self.scrolldown)
         self.window.bind("<Up>", self.scrollup)
+
+    def scrolldown(self, e):
+        list_len = len(self.display_list)
+        if list_len > 0:
+          x, y, word, font = self.display_list[list_len-1]
+          if self.scroll + HEIGHT < y:
+            self.scroll += SCROLL_STEP
+            self.draw()
+
+    def scrollup(self, e):
+        if self.scroll > 0:
+          self.scroll -= SCROLL_STEP
+          self.draw()
 
     def lex(self, body):
       out = []
@@ -152,19 +187,6 @@ class Browser:
       if not in_tag and text:
           out.append(Text(text))
       return out
-
-    def scrolldown(self, e):
-        list_len = len(self.display_list)
-        if list_len > 0:
-          x, y, word, font = self.display_list[list_len-1]
-          if self.scroll + HEIGHT < y:
-            self.scroll += SCROLL_STEP
-            self.draw()
-
-    def scrollup(self, e):
-        if self.scroll > 0:
-          self.scroll -= SCROLL_STEP
-          self.draw()
 
     def draw(self):
         self.canvas.delete("all")
