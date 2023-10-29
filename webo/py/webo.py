@@ -49,9 +49,72 @@ class URL:
         s.close()
         return headers, body
 
+class Text:
+    def __init__(self, text):
+        self.text = text
+
+class Tag:
+    def __init__(self, tag):
+        self.tag = tag
+
 HSTEP, VSTEP = 13, 18
 WIDTH, HEIGHT = 800, 600
 SCROLL_STEP = 100
+
+class Layout:
+    def __init__(self, tokens):
+        self.display_list = []
+        self.cursor_x = HSTEP
+        self.cursor_y = VSTEP
+        self.weight = "normal"
+        self.style = "roman"
+        self.size = 16
+        for tok in tokens:
+            self.token(tok)
+
+    def token(self, tok):
+        if isinstance(tok, Text):
+            if tok.text == "\n":
+               self.word(tok.text)
+               return
+            for word in tok.text.split():
+              self.word(word)
+            self.weight = "normal"
+            self.style = "roman"
+            self.size = 16
+        elif tok.tag == "i":
+            self.style = "italic"
+        elif tok.tag == "/i":
+            self.style = "roman"
+        elif tok.tag == "b":
+            self.weight = "bold"
+        elif tok.tag == "/b":
+            self.weight = "normal"
+        elif tok.tag == "small":
+            self.size -= 2
+        elif tok.tag == "/small":
+            self.size += 2
+        elif tok.tag == "big":
+            self.size += 4
+        elif tok.tag == "/big":
+            self.size -= 4
+
+    def word(self, word):
+        if word == "\n":
+          self.cursor_y += VSTEP
+          self.cursor_x = HSTEP
+          return
+        font = tkinter.font.Font(
+            size=self.size,
+            weight=self.weight,
+            slant=self.style,
+        )
+        w = font.measure(word)
+        self.display_list.append((self.cursor_x, self.cursor_y, word, font))
+        self.cursor_x += w + font.measure(" ")
+        if self.cursor_x + w > WIDTH - HSTEP:
+          self.cursor_y += font.metrics("linespace") * 1.25
+          self.cursor_x = HSTEP
 
 class Browser:
     def __init__(self):
@@ -63,46 +126,37 @@ class Browser:
             height=HEIGHT
         )
         self.canvas.pack()
-        self.bi_times = tkinter.font.Font(
-            family="Times",
-            size=16,
-            weight="bold",
-            slant="italic",
-        )
         self.window.bind("<Down>", self.scrolldown)
         self.window.bind("<Up>", self.scrollup)
 
     def lex(self, body):
-        text = ""
-        in_angle = False
-        for c in body:
+      out = []
+      text = ""
+      in_tag = False
+      for c in body:
           if c == "<":
-            in_angle = True
+              in_tag = True
+              if text: out.append(Text(text))
+              text = ""
           elif c == ">":
-            in_angle = False
-          elif not in_angle:
-            text += c
-        return text
-
-    def layout(self, text):
-        display_list = []
-        cursor_x, cursor_y = HSTEP, VSTEP
-        for c in text:
-            if c == "\n":
-              cursor_y += VSTEP
-              cursor_x = HSTEP
-              continue
-            display_list.append((cursor_x, cursor_y, c))
-            cursor_x += HSTEP
-            if cursor_x >= WIDTH - HSTEP:
-              cursor_y += VSTEP
-              cursor_x = HSTEP
-        return display_list
+              in_tag = False
+              out.append(Tag(text))
+              text = ""
+          elif c == "\n" and in_tag == False:
+              if text:
+                out.append(Text(text))
+                text = ""
+              out.append(Text("\n"))
+          else:
+              text += c
+      if not in_tag and text:
+          out.append(Text(text))
+      return out
 
     def scrolldown(self, e):
         list_len = len(self.display_list)
         if list_len > 0:
-          x, y, c = self.display_list[list_len-1]
+          x, y, word, font = self.display_list[list_len-1]
           if self.scroll + HEIGHT < y:
             self.scroll += SCROLL_STEP
             self.draw()
@@ -114,15 +168,15 @@ class Browser:
 
     def draw(self):
         self.canvas.delete("all")
-        for x, y, c in self.display_list:
+        for x, y, word, font in self.display_list:
             if y > self.scroll + HEIGHT: break
             if y + VSTEP < self.scroll: continue
-            self.canvas.create_text(x, y - self.scroll, text=c)
+            self.canvas.create_text(x, y - self.scroll, text=word, font=font, anchor='nw')
 
     def load(self, url):
         headers, body = url.request()
-        text = self.lex(body)
-        self.display_list = self.layout(text)
+        tokens = self.lex(body)
+        self.display_list = Layout(tokens).display_list
         self.draw()
 
 if __name__ == "__main__":
