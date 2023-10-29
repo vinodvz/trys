@@ -60,7 +60,17 @@ class Tag:
 HSTEP, VSTEP = 13, 18
 WIDTH, HEIGHT = 800, 600
 SCROLL_STEP = 100
+FONTS = {}
 
+def get_font(size, weight, slant):
+    key = (size, weight, slant)
+    if key not in FONTS:
+        font = tkinter.font.Font(size=size, weight=weight,
+            slant=slant)
+        label = tkinter.Label(font=font)
+        FONTS[key] = (font, label)
+    return FONTS[key][0]
+    
 class Layout:
     def __init__(self, tokens):
         self.display_list = []
@@ -111,11 +121,7 @@ class Layout:
         #   self.cursor_y += VSTEP
         #   self.cursor_x = HSTEP
         #   return
-        font = tkinter.font.Font(
-            size=self.size,
-            weight=self.weight,
-            slant=self.style,
-        )
+        font = get_font(self.size, self.weight, self.style)
         w = font.measure(word)
         # self.display_list.append((self.cursor_x, self.cursor_y, word, font))
         self.line.append((self.cursor_x, word, font))
